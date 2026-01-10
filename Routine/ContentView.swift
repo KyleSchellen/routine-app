@@ -24,20 +24,23 @@
 //}
 
 import SwiftUI
+import Foundation
 
 struct RoutineItem: Identifiable {
     let id = UUID()
     var title: String
-    var isDone: Bool
+    // Stores the day (YYYYMMDD) when this item was last completed.
+    // nil means "never completed" (or not yet done today).
+    var lastCompletedDay: Int?
 }
 
 struct ContentView: View {
     @State private var items: [RoutineItem] = [
-        RoutineItem(title: "Take vitamins (AM)", isDone: false),
-        RoutineItem(title: "Wash face (AM)", isDone: false),
-        RoutineItem(title: "Wash face (PM)", isDone: false),
-        RoutineItem(title: "Shower", isDone: false),
-        RoutineItem(title: "Bed by 10:00", isDone: false)
+        RoutineItem(title: "Take vitamins (AM)", lastCompletedDay: nil),
+        RoutineItem(title: "Wash face (AM)", lastCompletedDay: nil),
+        RoutineItem(title: "Wash face (PM)", lastCompletedDay: nil),
+        RoutineItem(title: "Shower", lastCompletedDay: nil),
+        RoutineItem(title: "Bed by 10:00", lastCompletedDay: nil)
     ]
 
     @State private var newItemTitle: String = ""
@@ -60,16 +63,28 @@ struct ContentView: View {
                 // List of routine items
                 List {
                     ForEach($items) { $item in
-                        Toggle(item.title, isOn: $item.isDone)
+                        let today = todayKey()
+                        let isDoneToday = ($item.wrappedValue.lastCompletedDay == today)
+
+                        Toggle(
+                            isOn: Binding(
+                                get: { isDoneToday },
+                                set: { newValue in
+                                    $item.wrappedValue.lastCompletedDay = newValue ? today : nil
+                                }
+                            )
+                        ) {
+                            HStack(spacing: 8) {
+                                Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
+                                    .imageScale(.medium)
+
+                                Text($item.wrappedValue.title)
+                                    .opacity(isDoneToday ? 0.5 : 1.0)
+                            }
+                        }
                     }
                     .onDelete(perform: deleteItems)
                 }
-
-                // Reset button
-                Button("Reset all for tomorrow") {
-                    resetAll()
-                }
-                .padding(.bottom, 8)
             }
             .navigationTitle("Today")
             .toolbar {
@@ -81,17 +96,17 @@ struct ContentView: View {
     private func addItem() {
         let trimmed = newItemTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        items.append(RoutineItem(title: trimmed, isDone: false))
-        newItemTitle = "" // reset textfield to empty afer adding new item
+        items.append(RoutineItem(title: trimmed, lastCompletedDay: nil))
+        newItemTitle = "" // reset textfield to empty after adding new item
     }
 
     private func deleteItems(at offsets: IndexSet) {
         items.remove(atOffsets: offsets)
     }
 
-    private func resetAll() {
-        for i in items.indices {
-            items[i].isDone = false
-        }
+    private func todayKey() -> Int {
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: Date())
+        return (components.year! * 10000) + (components.month! * 100) + components.day!
     }
 }
