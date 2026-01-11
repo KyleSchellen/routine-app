@@ -26,7 +26,7 @@
 import SwiftUI
 import Foundation
 
-enum RoutineCategory: String, CaseIterable, Codable {
+enum RoutineCategory: String, CaseIterable, Codable, Hashable {
     case morning = "Morning"
     case evening = "Evening"
     case anytime = "Anytime"
@@ -58,6 +58,8 @@ struct ContentView: View {
 
     @State private var newItemTitle: String = ""
     
+    @State private var selectedCategory: RoutineCategory = .anytime
+    
     @FocusState private var isAddFieldFocused: Bool
     
     var body: some View {
@@ -72,6 +74,13 @@ struct ContentView: View {
                         .onSubmit {
                             addItem()
                         }
+                    
+                    Picker("Category", selection: $selectedCategory) {
+                        ForEach(RoutineCategory.allCases, id: \.rawValue) { category in
+                            Text(category.rawValue).tag(category)
+                        }
+                    }
+                    .pickerStyle(.menu)
 
                     Button("Add") {
                         addItem()
@@ -143,7 +152,7 @@ struct ContentView: View {
     private func addItem() {
         let trimmed = newItemTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        items.append(RoutineItem(title: trimmed, lastCompletedDay: nil))
+        items.append(RoutineItem(title: trimmed, category: selectedCategory, lastCompletedDay: nil))
         newItemTitle = "" // reset textfield to empty after adding new item
         isAddFieldFocused = true //guard for future focus stealers
     }
