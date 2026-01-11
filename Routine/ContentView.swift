@@ -26,25 +26,29 @@
 import SwiftUI
 import Foundation
 
-struct RoutineItem: Identifiable {
-    let id = UUID()
+struct RoutineItem: Identifiable, Codable, Equatable {
+    let id: UUID
     var title: String
     // Stores the day (YYYYMMDD) when this item was last completed.
     // nil means "never completed" (or not yet done today).
     var lastCompletedDay: Int?
+    
+    init(id: UUID = UUID(), title: String, lastCompletedDay: Int? = nil) {
+        self.id = id
+        self.title = title
+        self.lastCompletedDay = lastCompletedDay
+    }
 }
 
 struct ContentView: View {
-    @State private var items: [RoutineItem] = [
-        RoutineItem(title: "Take vitamins (AM)", lastCompletedDay: nil),
-        RoutineItem(title: "Wash face (AM)", lastCompletedDay: nil),
-        RoutineItem(title: "Wash face (PM)", lastCompletedDay: nil),
-        RoutineItem(title: "Shower", lastCompletedDay: nil),
-        RoutineItem(title: "Bed by 10:00", lastCompletedDay: nil)
-    ]
+    private let storageKey = "routine_items_v1"
+    
+    @State private var items: [RoutineItem] = []
 
     @State private var newItemTitle: String = ""
-
+    
+    @FocusState private var isAddFieldFocused: Bool
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
@@ -52,6 +56,11 @@ struct ContentView: View {
                 HStack(spacing: 8) {
                     TextField("Add a routine…", text: $newItemTitle)
                         .textFieldStyle(.roundedBorder)
+                        .focused($isAddFieldFocused)
+                        .submitLabel(.done)
+                        .onSubmit {
+                            addItem()
+                        }
 
                     Button("Add") {
                         addItem()
@@ -91,6 +100,13 @@ struct ContentView: View {
                 EditButton() // enables swipe-to-delete + edit mode
             }
         }
+        .onAppear {
+            loadItems()
+            isAddFieldFocused = true
+        }
+        .onChange(of: items) {
+            saveItems()
+        }
     }
 
     private func addItem() {
@@ -98,6 +114,7 @@ struct ContentView: View {
         guard !trimmed.isEmpty else { return }
         items.append(RoutineItem(title: trimmed, lastCompletedDay: nil))
         newItemTitle = "" // reset textfield to empty after adding new item
+        isAddFieldFocused = true //guard for future focus stealers
     }
 
     private func deleteItems(at offsets: IndexSet) {
@@ -108,5 +125,43 @@ struct ContentView: View {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month, .day], from: Date())
         return (components.year! * 10000) + (components.month! * 100) + components.day!
+    }
+    
+    private func saveItems() {
+        do {
+            let data = try JSONEncoder().encode(items)
+            UserDefaults.standard.set(data, forKey: storageKey)
+        } catch {
+            print("Failed to save items:", error)
+        }
+    }
+
+    private func loadItems() {
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else {
+            // First run: start with defaults
+            items = [
+                RoutineItem(title: "Take vitamins (AM)"),
+                RoutineItem(title: "Wash face (AM)"),
+                RoutineItem(title: "Wash face (PM)"),
+                RoutineItem(title: "Shower"),
+                RoutineItem(title: "Bed by 10:00")
+            ]
+            return
+        }
+
+        do {
+            items = try JSONDecoder().decode([RoutineItem].self, from: data)
+        } catch {
+            print("Failed to load items:", error)
+
+            // If decoding fails, fall back to defaults so app still works
+            items = [
+                RoutineItem(title: "Take vitamins (AM)"),
+                RoutineItem(title: "Wash face (AM)"),
+                RoutineItem(title: "Wash face (PM)"),
+                RoutineItem(title: "Shower"),
+                RoutineItem(title: "Bed by 10:00")
+            ]
+        }
     }
 }
