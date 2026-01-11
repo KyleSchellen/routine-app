@@ -26,16 +26,27 @@
 import SwiftUI
 import Foundation
 
+enum RoutineCategory: String, CaseIterable, Codable {
+    case morning = "Morning"
+    case evening = "Evening"
+    case anytime = "Anytime"
+}
+
 struct RoutineItem: Identifiable, Codable, Equatable {
     let id: UUID
     var title: String
     // Stores the day (YYYYMMDD) when this item was last completed.
     // nil means "never completed" (or not yet done today).
     var lastCompletedDay: Int?
+    var category: RoutineCategory
     
-    init(id: UUID = UUID(), title: String, lastCompletedDay: Int? = nil) {
+    init(id: UUID = UUID(),
+         title: String,
+         category: RoutineCategory = .anytime,
+         lastCompletedDay: Int? = nil) {
         self.id = id
         self.title = title
+        self.category = category
         self.lastCompletedDay = lastCompletedDay
     }
 }
@@ -68,31 +79,11 @@ struct ContentView: View {
                     .disabled(newItemTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .padding(.horizontal)
-
-                // List of routine items
+                
                 List {
-                    ForEach($items) { $item in
-                        let today = todayKey()
-                        let isDoneToday = ($item.wrappedValue.lastCompletedDay == today)
-
-                        Toggle(
-                            isOn: Binding(
-                                get: { isDoneToday },
-                                set: { newValue in
-                                    $item.wrappedValue.lastCompletedDay = newValue ? today : nil
-                                }
-                            )
-                        ) {
-                            HStack(spacing: 8) {
-                                Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                                    .imageScale(.medium)
-
-                                Text($item.wrappedValue.title)
-                                    .opacity(isDoneToday ? 0.5 : 1.0)
-                            }
-                        }
-                    }
-                    .onDelete(perform: deleteItems)
+                    routineSection(.morning)
+                    routineSection(.anytime)
+                    routineSection(.evening)
                 }
             }
             .navigationTitle("Today")
@@ -108,7 +99,47 @@ struct ContentView: View {
             saveItems()
         }
     }
+    
+    @ViewBuilder
+    private func routineSection(_ category: RoutineCategory) -> some View {
+        let today = todayKey()
 
+        let indices = items.indices.filter { items[$0].category == category }
+        if !indices.isEmpty {
+            Section(category.rawValue) {
+                ForEach(indices, id: \.self) { index in
+                    let isDoneToday = (items[index].lastCompletedDay == today)
+                    
+                    Toggle(
+                        isOn: Binding(
+                            get: { isDoneToday },
+                            set: { newValue in
+                                items[index].lastCompletedDay = newValue ? today : nil
+                            }
+                        )
+                    ) {
+                        HStack(spacing: 8) {
+                            Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
+                                .imageScale(.medium)
+                            
+                            Text(items[index].title)
+                                .opacity(isDoneToday ? 0.5 : 1.0)
+                        }
+                    }
+                }
+                .onDelete { offsets in
+                    deleteFromCategory(category, offsets: offsets)
+                }
+            }
+        }
+    }
+    
+    private func deleteFromCategory(_ category: RoutineCategory, offsets: IndexSet) {
+        let indices = items.indices.filter { items[$0].category == category }
+        let actualIndices = offsets.map { indices[$0] }
+        items.remove(atOffsets: IndexSet(actualIndices))
+    }
+    
     private func addItem() {
         let trimmed = newItemTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -140,11 +171,11 @@ struct ContentView: View {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else {
             // First run: start with defaults
             items = [
-                RoutineItem(title: "Take vitamins (AM)"),
-                RoutineItem(title: "Wash face (AM)"),
-                RoutineItem(title: "Wash face (PM)"),
-                RoutineItem(title: "Shower"),
-                RoutineItem(title: "Bed by 10:00")
+                RoutineItem(title: "Take vitamins (AM)", category: .morning),
+                RoutineItem(title: "Wash face (AM)", category: .morning),
+                RoutineItem(title: "Wash face (PM)", category: .evening),
+                RoutineItem(title: "Shower", category: .anytime),
+                RoutineItem(title: "Bed by 10:00", category: .evening)
             ]
             return
         }
