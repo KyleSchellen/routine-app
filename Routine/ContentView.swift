@@ -90,9 +90,9 @@ struct ContentView: View {
                 .padding(.horizontal)
                 
                 List {
-                    routineSection(.morning)
-                    routineSection(.anytime)
-                    routineSection(.evening)
+                    routineSection(category: .morning)
+                    routineSection(category: .anytime)
+                    routineSection(category: .evening)
                 }
             }
             .navigationTitle("Today")
@@ -110,7 +110,7 @@ struct ContentView: View {
     }
     
     @ViewBuilder
-    private func routineSection(_ category: RoutineCategory) -> some View {
+    private func routineSection(category: RoutineCategory) -> some View {
         let today = todayKey()
 
         let indices = items.indices.filter { items[$0].category == category }
