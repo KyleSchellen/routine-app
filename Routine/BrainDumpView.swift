@@ -39,7 +39,7 @@ struct BrainDumpView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 10) {
-                    Button("Send lines to To-Do") {
+                    Button("Send to To-Do") {
                         sendLinesToTodo()
                     }
                     .buttonStyle(.borderedProminent)
@@ -64,7 +64,7 @@ struct BrainDumpView: View {
         .alert("Sent to To-Do", isPresented: $showSentAlert) {
             Button("OK") { }
         } message: {
-            Text("Added \(lastAddedCount). Removed \(lastBrainDumpDuplicateCount) duplicate(s) in Brain Dump. Skipped \(lastSkippedCount) already in To-Do.")
+            Text("Added \(lastAddedCount). Removed duplicates: \(lastBrainDumpDuplicateCount). Already in To-Do: \(lastSkippedCount).")
         }
     }
 
