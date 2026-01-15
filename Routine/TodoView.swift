@@ -40,7 +40,8 @@ struct TodoView: View {
     private let routineStorageKey = "routine_items_v1"
     private let trashRetentionDays: Int = 7 // auto-delete todos in this number of days
 
-    @State private var items: [TodoItem] = []
+    @State private var activeItems: [TodoItem] = []
+    @State private var trashItems: [TodoItem] = []
     @State private var newTitle: String = ""
     @State private var editingItemID: UUID? = nil
     @State private var editTitle: String = ""
@@ -56,6 +57,7 @@ struct TodoView: View {
 
     @State private var isTrashExpanded: Bool = false
     @State private var showEmptyTrashConfirm: Bool = false
+    @State private var saveWorkItem: DispatchWorkItem? = nil
 
     @FocusState private var isAddFieldFocused: Bool
 
@@ -81,45 +83,26 @@ struct TodoView: View {
 
                 // List of To-Do items
                 List {
-                    // Only show active (not deleted) items in the main list
-                    let activeIndices = items.indices.filter { items[$0].deletedAt == nil }
-
-                    ForEach(activeIndices, id: \.self) { index in
-                        let item = items[index]
-
-                        Toggle(isOn: $items[index].isDone) {
+                    // Active (not deleted) items
+                    ForEach($activeItems) { $item in
+                        Toggle(isOn: $item.isDone) {
                             Text(item.title)
                                 .opacity(item.isDone ? 0.5 : 1.0)
                         }
-                        .contentShape(Rectangle()) // makes the whole row tappable
-                        .onTapGesture {
-                            startEditing(item: item)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("Delete", role: .destructive) {
-                                softDeleteTodo(id: item.id)
-                            }
-
-                            Button("Add to Routines") {
-                                beginPromote(todo: item)
-                            }
-                            .tint(.blue)
-                        }
+                        .contentShape(Rectangle())
+                    }
+                    .onMove { source, destination in
+                        moveActiveItems(from: source, to: destination)
                     }
                     .onDelete { offsets in
-                        // offsets are relative to activeIndices, so translate them
-                        let actualIndices = offsets.map { activeIndices[$0] }
-                        softDeleteItems(at: IndexSet(actualIndices))
+                        softDeleteActiveItems(at: offsets)
                     }
 
                     // Recently Deleted (Trash)
-                    let trashIndices = items.indices.filter { items[$0].deletedAt != nil }
-                    if !trashIndices.isEmpty {
+                    if !trashItems.isEmpty {
                         Section {
                             DisclosureGroup(isExpanded: $isTrashExpanded) {
-                                ForEach(trashIndices, id: \.self) { index in
-                                    let item = items[index]
-
+                                ForEach(trashItems) { item in
                                     HStack {
                                         Text(item.title)
                                             .foregroundStyle(.secondary)
@@ -127,15 +110,16 @@ struct TodoView: View {
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         Button("Restore") {
-                                            restoreTodo(id: item.id)
+                                            restoreFromTrash(id: item.id)
                                         }
                                         .tint(.blue)
 
                                         Button("Delete Forever", role: .destructive) {
-                                            deleteTodoForever(id: item.id)
+                                            deleteFromTrashForever(id: item.id)
                                         }
                                     }
                                 }
+
                                 Button {
                                     showEmptyTrashConfirm = true
                                 } label: {
@@ -149,7 +133,7 @@ struct TodoView: View {
                                 .buttonStyle(.plain)
                                 .padding(.top, 8)
                             } label: {
-                                Text("Recently Deleted (\(trashIndices.count))")
+                                Text("Recently Deleted (\(trashItems.count))")
                             }
                         }
                     }
@@ -201,7 +185,14 @@ struct TodoView: View {
             purgeExpiredTrash()
             isAddFieldFocused = true
         }
-        .onChange(of: items) {
+        .onChange(of: activeItems) {
+            scheduleSave()
+        }
+        .onChange(of: trashItems) {
+            scheduleSave()
+        }
+        .onDisappear {
+            saveWorkItem?.cancel()
             saveItems()
         }
         .alert("Added to Routines", isPresented: $showPromotedAlert) {
@@ -286,8 +277,8 @@ struct TodoView: View {
         let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if let index = items.firstIndex(where: { $0.id == id }) {
-            items[index].title = trimmed
+        if let index = activeItems.firstIndex(where: { $0.id == id }) {
+            activeItems[index].title = trimmed
         }
 
         editingItemID = nil
@@ -297,37 +288,48 @@ struct TodoView: View {
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        items.append(TodoItem(title: trimmed))
+        activeItems.append(TodoItem(title: trimmed))
         newTitle = ""
         isAddFieldFocused = true
     }
 
-    private func softDeleteItems(at offsets: IndexSet) {
-        for i in offsets {
-            items[i].deletedAt = Date()
+    private func softDeleteActiveItems(at offsets: IndexSet) {
+        // Move the selected active items into Trash and mark deletedAt.
+        let now = Date()
+        let moving = offsets.map { activeItems[$0] }
+
+        // Remove from active starting from the end so indices don’t shift.
+        for i in offsets.sorted(by: >) {
+            activeItems.remove(at: i)
+        }
+
+        // Append to trash in the same order the user selected.
+        for var item in moving {
+            item.deletedAt = now
+            trashItems.append(item)
         }
     }
 
-    private func softDeleteTodo(id: UUID) {
-        if let index = items.firstIndex(where: { $0.id == id }) {
-            items[index].deletedAt = Date()
-        }
+    private func restoreFromTrash(id: UUID) {
+        guard let index = trashItems.firstIndex(where: { $0.id == id }) else { return }
+        var item = trashItems[index]
+        item.deletedAt = nil
+
+        trashItems.remove(at: index)
+        activeItems.append(item)
     }
 
-    private func restoreTodo(id: UUID) {
-        if let index = items.firstIndex(where: { $0.id == id }) {
-            items[index].deletedAt = nil
-        }
-    }
-
-    private func deleteTodoForever(id: UUID) {
-        if let index = items.firstIndex(where: { $0.id == id }) {
-            items.remove(at: index)
-        }
+    private func deleteFromTrashForever(id: UUID) {
+        guard let index = trashItems.firstIndex(where: { $0.id == id }) else { return }
+        trashItems.remove(at: index)
     }
 
     private func deleteAllTrash() {
-        items.removeAll { $0.deletedAt != nil }
+        trashItems.removeAll()
+    }
+
+    private func moveActiveItems(from source: IndexSet, to destination: Int) {
+        activeItems.move(fromOffsets: source, toOffset: destination)
     }
 
     // Permanently remove items that have been in Trash longer than `trashRetentionDays`.
@@ -335,17 +337,30 @@ struct TodoView: View {
         let now = Date()
         let cutoff = Calendar.current.date(byAdding: .day, value: -trashRetentionDays, to: now) ?? now
 
-        items.removeAll { item in
-            guard let deletedAt = item.deletedAt else { return false } // keep non-deleted items
-            return deletedAt < cutoff // delete if older than cutoff
+        trashItems.removeAll { item in
+            guard let deletedAt = item.deletedAt else { return false }
+            return deletedAt < cutoff
         }
     }
 
     // MARK: - Persistence
 
+    // Debounce saving so we don’t JSON-encode on every tiny change (like during drag reordering).
+    private func scheduleSave() {
+        saveWorkItem?.cancel()
+
+        let work = DispatchWorkItem {
+            saveItems()
+        }
+
+        saveWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
     private func saveItems() {
         do {
-            let data = try JSONEncoder().encode(items)
+            let combined = activeItems + trashItems
+            let data = try JSONEncoder().encode(combined)
             UserDefaults.standard.set(data, forKey: storageKey)
         } catch {
             print("Failed to save To-Do items:", error)
@@ -354,15 +369,19 @@ struct TodoView: View {
 
     private func loadItems() {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else {
-            items = [] // start empty
+            activeItems = []
+            trashItems = []
             return
         }
 
         do {
-            items = try JSONDecoder().decode([TodoItem].self, from: data)
+            let combined = try JSONDecoder().decode([TodoItem].self, from: data)
+            activeItems = combined.filter { $0.deletedAt == nil }
+            trashItems = combined.filter { $0.deletedAt != nil }
         } catch {
             print("Failed to load To-Do items:", error)
-            items = []
+            activeItems = []
+            trashItems = []
         }
     }
 
@@ -383,8 +402,8 @@ struct TodoView: View {
 
             // Remove the original To-Do (move instead of copy)
             if let todoID = promotingTodoID,
-               let index = items.firstIndex(where: { $0.id == todoID }) {
-                items.remove(at: index)
+               let index = activeItems.firstIndex(where: { $0.id == todoID }) {
+                activeItems.remove(at: index)
             }
 
             showPromotedAlert = true
