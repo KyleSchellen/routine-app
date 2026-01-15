@@ -52,6 +52,7 @@ struct BrainDumpView: View {
                     .buttonStyle(.bordered)
                     .disabled(text.isEmpty)
                 }
+                .padding(.bottom, 20)
             }
             .padding()
             .contentShape(Rectangle())
