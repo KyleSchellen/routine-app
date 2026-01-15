@@ -90,6 +90,16 @@ struct TodoView: View {
                                 .opacity(item.isDone ? 0.5 : 1.0)
                         }
                         .contentShape(Rectangle())
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Delete", role: .destructive) {
+                                softDeleteTodo(id: $item.wrappedValue.id)
+                            }
+
+                            Button("Add to Routines") {
+                                beginPromote(todo: $item.wrappedValue)
+                            }
+                            .tint(.blue)
+                        }
                     }
                     .onMove { source, destination in
                         moveActiveItems(from: source, to: destination)
@@ -291,6 +301,11 @@ struct TodoView: View {
         activeItems.append(TodoItem(title: trimmed))
         newTitle = ""
         isAddFieldFocused = true
+    }
+
+    private func softDeleteTodo(id: UUID) {
+        guard let index = activeItems.firstIndex(where: { $0.id == id }) else { return }
+        softDeleteActiveItems(at: IndexSet(integer: index))
     }
 
     private func softDeleteActiveItems(at offsets: IndexSet) {
