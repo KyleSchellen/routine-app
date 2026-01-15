@@ -36,13 +36,12 @@ struct TodayView: View {
     @State private var isAnytimeExpanded: Bool = true
     @State private var isEveningExpanded: Bool = true
     @State private var isTodoExpanded: Bool = true
+    @State private var isRoutinesExpanded: Bool = true
 
     var body: some View {
         NavigationStack {
             List {
-                routinesCategorySection(category: .morning)
-                routinesCategorySection(category: .anytime)
-                routinesCategorySection(category: .evening)
+                routinesGroup()
 
                 todoSectionCollapsible()
 
@@ -62,10 +61,31 @@ struct TodayView: View {
         }
     }
 
-    // MARK: - Routines (not done today, grouped by category)
+    // MARK: - Routines (group + subcategories)
 
     @ViewBuilder
-    private func routinesCategorySection(category: RoutineCategory) -> some View {
+    private func routinesGroup() -> some View {
+        let today = todayKey()
+
+        let totalCount = routines.count
+        let remainingCount = routines.filter { $0.lastCompletedDay != today }.count
+
+        // Hide the whole routines group if there are no routines at all.
+        if totalCount > 0 {
+            Section {
+                DisclosureGroup(isExpanded: $isRoutinesExpanded) {
+                    routinesSubcategory(category: .morning)
+                    routinesSubcategory(category: .anytime)
+                    routinesSubcategory(category: .evening)
+                } label: {
+                    Text("Routines (\(remainingCount)/\(totalCount))")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func routinesSubcategory(category: RoutineCategory) -> some View {
         let today = todayKey()
 
         let totalIndices = routines.indices.filter { i in
@@ -79,35 +99,31 @@ struct TodayView: View {
         let remainingCount = remainingIndices.count
         let totalCount = totalIndices.count
 
-        // If the user has no routines in this category at all, hide the section.
+        // If the user has no routines in this category at all, hide this subcategory.
         if totalCount > 0 {
-            Section {
-                DisclosureGroup(
-                    isExpanded: expandedBinding(for: category)
-                ) {
-                    if remainingIndices.isEmpty {
-                        Text("All done ✅")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(remainingIndices, id: \.self) { index in
-                            let isDoneToday = (routines[index].lastCompletedDay == today)
+            DisclosureGroup(isExpanded: expandedBinding(for: category)) {
+                if remainingIndices.isEmpty {
+                    Text("All done ✅")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(remainingIndices, id: \.self) { index in
+                        let isDoneToday = (routines[index].lastCompletedDay == today)
 
-                            Toggle(
-                                isOn: Binding(
-                                    get: { isDoneToday },
-                                    set: { newValue in
-                                        routines[index].lastCompletedDay = newValue ? today : nil
-                                    }
-                                )
-                            ) {
-                                Text(routines[index].title)
-                            }
-                            .toggleStyle(CheckboxToggleStyle())
+                        Toggle(
+                            isOn: Binding(
+                                get: { isDoneToday },
+                                set: { newValue in
+                                    routines[index].lastCompletedDay = newValue ? today : nil
+                                }
+                            )
+                        ) {
+                            Text(routines[index].title)
                         }
+                        .toggleStyle(CheckboxToggleStyle())
                     }
-                } label: {
-                    Text("\(category.rawValue) (\(remainingCount)/\(totalCount))")
                 }
+            } label: {
+                Text("\(category.rawValue) (\(remainingCount)/\(totalCount))")
             }
         }
     }
