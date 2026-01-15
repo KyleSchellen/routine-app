@@ -1,5 +1,5 @@
 //
-//  ContentView.swift
+//  RoutinesView.swift
 //  Routine
 //
 //  Created by Kyle on 2026-01-08.
@@ -7,7 +7,7 @@
 
 //import SwiftUI
 //
-//struct ContentView: View {
+//struct RoutinesView: View {
 //    var body: some View {
 //        VStack {
 //            Image(systemName: "globe")
@@ -20,7 +20,7 @@
 //}
 //
 //#Preview {
-//    ContentView()
+//    RoutinesView()
 //}
 
 import SwiftUI
@@ -52,7 +52,7 @@ struct RoutineItem: Identifiable, Codable, Equatable {
 }
 
 
-struct ContentView: View {
+struct RoutinesView: View {
     private let storageKey = "routine_items_v1"
     
     @State private var items: [RoutineItem] = []
@@ -99,7 +99,7 @@ struct ContentView: View {
                     routineSection(category: .evening)
                 }
             }
-            .navigationTitle("Today")
+            .navigationTitle("Routines")
             .toolbar {
                 EditButton() // enables swipe-to-delete + edit mode
             }
@@ -275,3 +275,8 @@ struct ContentView: View {
         }
     }
 }
+
+#Preview {
+    RoutinesView()
+}
+

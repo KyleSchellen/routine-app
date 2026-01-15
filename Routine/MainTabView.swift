@@ -10,9 +10,9 @@ import SwiftUI
 struct MainTabView: View {
     var body: some View {
         TabView {
-            ContentView()
+            RoutinesView()
                 .tabItem {
-                    Label("Today", systemImage: "checkmark.circle")
+                    Label("Routines", systemImage: "checkmark.circle")
                 }
 
             BrainDumpView()
