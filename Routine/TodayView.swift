@@ -32,6 +32,11 @@ struct TodayView: View {
     @State private var todos: [TodoItem] = []
     @State private var isCompletedExpanded: Bool = true
 
+    @State private var isMorningExpanded: Bool = true
+    @State private var isAnytimeExpanded: Bool = true
+    @State private var isEveningExpanded: Bool = true
+    @State private var isTodoExpanded: Bool = true
+
     var body: some View {
         NavigationStack {
             List {
@@ -39,9 +44,7 @@ struct TodayView: View {
                 routinesCategorySection(category: .anytime)
                 routinesCategorySection(category: .evening)
 
-                Section("To-Do") {
-                    todoNotDoneRows()
-                }
+                todoSectionCollapsible()
 
                 completedSections()
             }
@@ -65,26 +68,75 @@ struct TodayView: View {
     private func routinesCategorySection(category: RoutineCategory) -> some View {
         let today = todayKey()
 
-        let notDoneIndices = routines.indices.filter { i in
-            routines[i].category == category && routines[i].lastCompletedDay != today
+        let totalIndices = routines.indices.filter { i in
+            routines[i].category == category
         }
 
-        if !notDoneIndices.isEmpty {
-            Section(category.rawValue) {
-                ForEach(notDoneIndices, id: \.self) { index in
-                    let isDoneToday = (routines[index].lastCompletedDay == today)
+        let remainingIndices = totalIndices.filter { i in
+            routines[i].lastCompletedDay != today
+        }
 
-                    Toggle(
-                        isOn: Binding(
-                            get: { isDoneToday },
-                            set: { newValue in
-                                routines[index].lastCompletedDay = newValue ? today : nil
+        let remainingCount = remainingIndices.count
+        let totalCount = totalIndices.count
+
+        // If the user has no routines in this category at all, hide the section.
+        if totalCount > 0 {
+            Section {
+                DisclosureGroup(
+                    isExpanded: expandedBinding(for: category)
+                ) {
+                    if remainingIndices.isEmpty {
+                        Text("All done ✅")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(remainingIndices, id: \.self) { index in
+                            let isDoneToday = (routines[index].lastCompletedDay == today)
+
+                            Toggle(
+                                isOn: Binding(
+                                    get: { isDoneToday },
+                                    set: { newValue in
+                                        routines[index].lastCompletedDay = newValue ? today : nil
+                                    }
+                                )
+                            ) {
+                                Text(routines[index].title)
                             }
-                        )
-                    ) {
-                        Text(routines[index].title)
+                            .toggleStyle(CheckboxToggleStyle())
+                        }
                     }
-                    .toggleStyle(CheckboxToggleStyle())
+                } label: {
+                    Text("\(category.rawValue) (\(remainingCount)/\(totalCount))")
+                }
+            }
+        }
+    }
+
+    private func expandedBinding(for category: RoutineCategory) -> Binding<Bool> {
+        switch category {
+        case .morning:
+            return $isMorningExpanded
+        case .anytime:
+            return $isAnytimeExpanded
+        case .evening:
+            return $isEveningExpanded
+        }
+    }
+
+    // MARK: - To-Dos (collapsible)
+
+    @ViewBuilder
+    private func todoSectionCollapsible() -> some View {
+        let remainingCount = todos.filter { !$0.isDone }.count
+        let totalCount = todos.count
+
+        // Hide the section entirely if there are no To-Dos at all.
+        if totalCount > 0 {
+            Section {
+                DisclosureGroup(isExpanded: $isTodoExpanded) {
+                    todoNotDoneRows()
+                } label: {
+                    Text("To-Do (\(remainingCount)/\(totalCount))")
                 }
             }
         }
@@ -99,7 +151,7 @@ struct TodayView: View {
         }
 
         if notDoneIndices.isEmpty {
-            Text("Nothing to do right now.")
+            Text("All done ✅")
                 .foregroundStyle(.secondary)
         } else {
             ForEach(notDoneIndices, id: \.self) { index in
