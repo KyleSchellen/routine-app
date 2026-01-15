@@ -30,6 +30,7 @@ struct TodayView: View {
 
     @State private var routines: [RoutineItem] = []
     @State private var todos: [TodoItem] = []
+    @State private var isCompletedExpanded: Bool = true
 
     var body: some View {
         NavigationStack {
@@ -110,7 +111,7 @@ struct TodayView: View {
         }
     }
 
-    // MARK: - Completed (global bucket)
+    // MARK: - Completed (global bucket, collapsible)
 
     @ViewBuilder
     private func completedSections() -> some View {
@@ -124,51 +125,59 @@ struct TodayView: View {
             todos[i].isDone == true
         }
 
+        // Only show the group if there is anything completed
         if !completedRoutineIndices.isEmpty || !completedTodoIndices.isEmpty {
-            Section("Completed") {
-                if !completedRoutineIndices.isEmpty {
-                    Text("Completed Routines")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 4)
+            Section {
+                DisclosureGroup(
+                    isExpanded: $isCompletedExpanded
+                ) {
+                    // Content shown when expanded
+                    if !completedRoutineIndices.isEmpty {
+                        Text("Completed Routines")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
 
-                    ForEach(completedRoutineIndices, id: \.self) { index in
-                        let isDoneToday = (routines[index].lastCompletedDay == today)
+                        ForEach(completedRoutineIndices, id: \.self) { index in
+                            let isDoneToday = (routines[index].lastCompletedDay == today)
 
-                        Toggle(
-                            isOn: Binding(
-                                get: { isDoneToday },
-                                set: { newValue in
-                                    routines[index].lastCompletedDay = newValue ? today : nil
+                            Toggle(
+                                isOn: Binding(
+                                    get: { isDoneToday },
+                                    set: { newValue in
+                                        routines[index].lastCompletedDay = newValue ? today : nil
+                                    }
+                                )
+                            ) {
+                                HStack {
+                                    Text(routines[index].title)
+                                    Spacer()
+                                    Text(routines[index].category.rawValue)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-                            )
-                        ) {
-                            HStack {
-                                Text(routines[index].title)
-                                Spacer()
-                                Text(routines[index].category.rawValue)
-                                    .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                            .toggleStyle(CheckboxToggleStyle())
+                        }
+                    }
+
+                    if !completedTodoIndices.isEmpty {
+                        Text("Completed To-Dos")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 6)
+
+                        ForEach(completedTodoIndices, id: \.self) { index in
+                            Toggle(isOn: $todos[index].isDone) {
+                                Text(todos[index].title)
                                     .foregroundStyle(.secondary)
                             }
-                            .foregroundStyle(.secondary)
+                            .toggleStyle(CheckboxToggleStyle())
                         }
-                        .toggleStyle(CheckboxToggleStyle())
                     }
-                }
-
-                if !completedTodoIndices.isEmpty {
-                    Text("Completed To-Dos")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 6)
-
-                    ForEach(completedTodoIndices, id: \.self) { index in
-                        Toggle(isOn: $todos[index].isDone) {
-                            Text(todos[index].title)
-                                .foregroundStyle(.secondary)
-                        }
-                        .toggleStyle(CheckboxToggleStyle())
-                    }
+                } label: {
+                    Text("Completed")
                 }
             }
         }
