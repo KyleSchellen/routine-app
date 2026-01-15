@@ -5,16 +5,23 @@
 //  Created by Kyle on 2026-01-15.
 //
 
-
-//
-//  TodayView.swift
-//  Routine
-//
-//  Created by Kyle on 2026-01-15.
-//
-
 import SwiftUI
 import Foundation
+
+struct CheckboxToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
+                    .imageScale(.medium)
+                configuration.label
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 struct TodayView: View {
     // Reuse the same storage keys as the other tabs
@@ -27,11 +34,15 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             List {
-                routinesSection(category: .morning)
-                routinesSection(category: .anytime)
-                routinesSection(category: .evening)
+                routinesCategorySection(category: .morning)
+                routinesCategorySection(category: .anytime)
+                routinesCategorySection(category: .evening)
 
-                todoSection()
+                Section("To-Do") {
+                    todoNotDoneRows()
+                }
+
+                completedSections()
             }
             .navigationTitle("Today")
         }
@@ -47,21 +58,19 @@ struct TodayView: View {
         }
     }
 
-    // MARK: - Routines (only show not-done-today)
+    // MARK: - Routines (not done today, grouped by category)
 
     @ViewBuilder
-    private func routinesSection(category: RoutineCategory) -> some View {
+    private func routinesCategorySection(category: RoutineCategory) -> some View {
         let today = todayKey()
 
-        // Indices in the *master* array that match this category AND are not done today
-        let indices = routines.indices.filter { i in
+        let notDoneIndices = routines.indices.filter { i in
             routines[i].category == category && routines[i].lastCompletedDay != today
         }
 
-        if !indices.isEmpty {
-            Section("\(category.rawValue) Routines") {
-                ForEach(indices, id: \.self) { index in
-                    // Done today if lastCompletedDay matches today's key
+        if !notDoneIndices.isEmpty {
+            Section(category.rawValue) {
+                ForEach(notDoneIndices, id: \.self) { index in
                     let isDoneToday = (routines[index].lastCompletedDay == today)
 
                     Toggle(
@@ -74,25 +83,91 @@ struct TodayView: View {
                     ) {
                         Text(routines[index].title)
                     }
+                    .toggleStyle(CheckboxToggleStyle())
                 }
             }
         }
     }
 
-    // MARK: - To-Dos (only show not done)
+    // MARK: - To-Dos (not done)
 
     @ViewBuilder
-    private func todoSection() -> some View {
-        // Indices in the *master* array for unfinished todos
-        let indices = todos.indices.filter { i in
+    private func todoNotDoneRows() -> some View {
+        let notDoneIndices = todos.indices.filter { i in
             todos[i].isDone == false
         }
 
-        if !indices.isEmpty {
-            Section("To-Do") {
-                ForEach(indices, id: \.self) { index in
-                    Toggle(isOn: $todos[index].isDone) {
-                        Text(todos[index].title)
+        if notDoneIndices.isEmpty {
+            Text("Nothing to do right now.")
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(notDoneIndices, id: \.self) { index in
+                Toggle(isOn: $todos[index].isDone) {
+                    Text(todos[index].title)
+                }
+                .toggleStyle(CheckboxToggleStyle())
+            }
+        }
+    }
+
+    // MARK: - Completed (global bucket)
+
+    @ViewBuilder
+    private func completedSections() -> some View {
+        let today = todayKey()
+
+        let completedRoutineIndices = routines.indices.filter { i in
+            routines[i].lastCompletedDay == today
+        }
+
+        let completedTodoIndices = todos.indices.filter { i in
+            todos[i].isDone == true
+        }
+
+        if !completedRoutineIndices.isEmpty || !completedTodoIndices.isEmpty {
+            Section("Completed") {
+                if !completedRoutineIndices.isEmpty {
+                    Text("Completed Routines")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+
+                    ForEach(completedRoutineIndices, id: \.self) { index in
+                        let isDoneToday = (routines[index].lastCompletedDay == today)
+
+                        Toggle(
+                            isOn: Binding(
+                                get: { isDoneToday },
+                                set: { newValue in
+                                    routines[index].lastCompletedDay = newValue ? today : nil
+                                }
+                            )
+                        ) {
+                            HStack {
+                                Text(routines[index].title)
+                                Spacer()
+                                Text(routines[index].category.rawValue)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        .toggleStyle(CheckboxToggleStyle())
+                    }
+                }
+
+                if !completedTodoIndices.isEmpty {
+                    Text("Completed To-Dos")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+
+                    ForEach(completedTodoIndices, id: \.self) { index in
+                        Toggle(isOn: $todos[index].isDone) {
+                            Text(todos[index].title)
+                                .foregroundStyle(.secondary)
+                        }
+                        .toggleStyle(CheckboxToggleStyle())
                     }
                 }
             }
