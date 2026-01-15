@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Foundation
+import UIKit
 
 struct BrainDumpView: View {
     // Where we save the big brain dump text
@@ -53,6 +54,10 @@ struct BrainDumpView: View {
                 }
             }
             .padding()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                hideKeyboard()
+            }
             .navigationTitle("Brain Dump")
         }
         .onAppear {
@@ -66,6 +71,16 @@ struct BrainDumpView: View {
         } message: {
             Text("Added \(lastAddedCount). Removed duplicates: \(lastBrainDumpDuplicateCount). Already in To-Do: \(lastSkippedCount).")
         }
+    }
+
+    // Simple helper to hide the keyboard
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 
     // MARK: - Brain Dump Persistence
