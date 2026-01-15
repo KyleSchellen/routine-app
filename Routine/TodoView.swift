@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Foundation
+import UIKit
 
 // MARK: - Model
 
@@ -98,6 +99,10 @@ struct TodoView: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                hideKeyboard()
+            }
             .navigationTitle("To-Do")
             .toolbar {
                 EditButton()
@@ -184,6 +189,16 @@ struct TodoView: View {
                 }
             }
         }
+    }
+
+    // Simple helper to hide the keyboard
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 
     // MARK: - Actions

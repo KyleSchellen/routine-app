@@ -25,6 +25,7 @@
 
 import SwiftUI
 import Foundation
+import UIKit
 
 enum RoutineCategory: String, CaseIterable, Codable, Hashable {
     case morning = "Morning"
@@ -99,6 +100,10 @@ struct RoutinesView: View {
                     routineSection(category: .evening)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                hideKeyboard()
+            }
             .navigationTitle("Routines")
             .toolbar {
                 EditButton() // enables swipe-to-delete + edit mode
@@ -147,6 +152,16 @@ struct RoutinesView: View {
                 }
             }
         }
+    }
+    
+    // Simple helper to hide the keyboard
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
     
     @ViewBuilder
@@ -279,4 +294,3 @@ struct RoutinesView: View {
 #Preview {
     RoutinesView()
 }
-
