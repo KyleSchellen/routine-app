@@ -11,8 +11,7 @@ import SwiftUI
 struct RoutineApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
-//            BrainDumpView()
+            MainTabView()
         }
     }
 }
