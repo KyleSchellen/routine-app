@@ -51,14 +51,18 @@ struct RoutineItem: Identifiable, Codable, Equatable {
     }
 }
 
+
 struct ContentView: View {
     private let storageKey = "routine_items_v1"
     
     @State private var items: [RoutineItem] = []
-
     @State private var newItemTitle: String = ""
-    
     @State private var selectedCategory: RoutineCategory = .anytime
+    
+    // Editing
+    @State private var editingItemID: UUID? = nil
+    @State private var editTitle: String = ""
+    @State private var editCategory: RoutineCategory = .anytime
     
     @FocusState private var isAddFieldFocused: Bool
     
@@ -107,6 +111,42 @@ struct ContentView: View {
         .onChange(of: items) {
             saveItems()
         }
+        .sheet(
+            isPresented: Binding(
+                get: { editingItemID != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        editingItemID = nil
+                    }
+                }
+            )
+        ) {
+            NavigationStack {
+                Form {
+                    Section("Title") {
+                        TextField("Routine title", text: $editTitle)
+                    }
+
+                    Section("Category") {
+                        Picker("Category", selection: $editCategory) {
+                            ForEach(RoutineCategory.allCases, id: \.rawValue) { cat in
+                                Text(cat.rawValue).tag(cat)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Edit Routine")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { editingItemID = nil }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { saveEdits() }
+                            .disabled(editTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+        }
     }
     
     @ViewBuilder
@@ -135,15 +175,24 @@ struct ContentView: View {
                                 .opacity(isDoneToday ? 0.5 : 1.0)
                         }
                     }
+                    .swipeActions(edge: .trailing) {
+                        Button("Delete", role: .destructive) {
+                                items.remove(at: index)
+                            }
+                        Button("Edit") {
+                            startEditing(item: items[index])
+                        }
+                        .tint(.blue)
+                    }
                 }
                 .onDelete { offsets in
-                    deleteFromCategory(category, offsets: offsets)
+                    deleteFromCategory(category: category, offsets: offsets)
                 }
             }
         }
     }
     
-    private func deleteFromCategory(_ category: RoutineCategory, offsets: IndexSet) {
+    private func deleteFromCategory(category: RoutineCategory, offsets: IndexSet) {
         let indices = items.indices.filter { items[$0].category == category }
         let actualIndices = offsets.map { indices[$0] }
         items.remove(atOffsets: IndexSet(actualIndices))
@@ -155,6 +204,12 @@ struct ContentView: View {
         items.append(RoutineItem(title: trimmed, category: selectedCategory, lastCompletedDay: nil))
         newItemTitle = "" // reset textfield to empty after adding new item
         isAddFieldFocused = true //guard for future focus stealers
+    }
+    
+    private func startEditing(item: RoutineItem) {
+        editingItemID = item.id
+        editTitle = item.title
+        editCategory = item.category
     }
 
     private func deleteItems(at offsets: IndexSet) {
@@ -174,6 +229,21 @@ struct ContentView: View {
         } catch {
             print("Failed to save items:", error)
         }
+    }
+    
+    private func saveEdits() {
+        guard let id = editingItemID,
+              let idx = items.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        items[idx].title = trimmed
+        items[idx].category = editCategory
+
+        editingItemID = nil
     }
 
     private func loadItems() {
