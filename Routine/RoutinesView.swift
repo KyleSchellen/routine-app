@@ -306,24 +306,10 @@ struct RoutinesView: View {
                         .tint(.blue)
                     }
                 }
-                .onDelete { offsets in
-                    deleteFromCategory(category: category, offsets: offsets)
-                }
                 .onMove { source, destination in
                     moveItems(in: category, from: source, to: destination)
                 }
             }
-        }
-    }
-    
-    private func deleteFromCategory(category: RoutineCategory, offsets: IndexSet) {
-        switch category {
-        case .morning:
-            morningItems.remove(atOffsets: offsets)
-        case .anytime:
-            anytimeItems.remove(atOffsets: offsets)
-        case .evening:
-            eveningItems.remove(atOffsets: offsets)
         }
     }
     
