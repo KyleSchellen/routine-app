@@ -43,8 +43,6 @@ struct TodoView: View {
     @State private var activeItems: [TodoItem] = []
     @State private var trashItems: [TodoItem] = []
     @State private var newTitle: String = ""
-    @State private var editingItemID: UUID? = nil
-    @State private var editTitle: String = ""
     @State private var showPromotedAlert: Bool = false
     @State private var lastPromotedTitle: String = ""
     @State private var lastPromotedCategory: RoutineCategory = .anytime
@@ -104,9 +102,6 @@ struct TodoView: View {
                     .onMove { source, destination in
                         moveActiveItems(from: source, to: destination)
                     }
-                    .onDelete { offsets in
-                        softDeleteActiveItems(at: offsets)
-                    }
 
                     // Recently Deleted (Trash)
                     if !trashItems.isEmpty {
@@ -156,38 +151,6 @@ struct TodoView: View {
             .navigationTitle("To-Do")
             .toolbar {
                 EditButton()
-            }
-            .sheet(
-                isPresented: Binding(
-                    get: { editingItemID != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            editingItemID = nil
-                        }
-                    }
-                )
-            ) {
-                NavigationStack {
-                    Form {
-                        Section("Title") {
-                            TextField("To-Do title", text: $editTitle)
-                        }
-                    }
-                    .navigationTitle("Edit To-Do")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                editingItemID = nil
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") {
-                                saveEdits()
-                            }
-                            .disabled(editTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-                }
             }
         }
         .onAppear {
@@ -276,23 +239,6 @@ struct TodoView: View {
         showingPromoteSheet = true
     }
 
-    private func startEditing(item: TodoItem) {
-        editingItemID = item.id
-        editTitle = item.title
-    }
-
-    private func saveEdits() {
-        guard let id = editingItemID else { return }
-
-        let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        if let index = activeItems.firstIndex(where: { $0.id == id }) {
-            activeItems[index].title = trimmed
-        }
-
-        editingItemID = nil
-    }
 
     private func addItem() {
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
