@@ -16,17 +16,20 @@ struct TodoItem: Identifiable, Codable, Equatable {
     var title: String
     var isDone: Bool
     let createdAt: Date
+    var deletedAt: Date?
 
     init(
         id: UUID = UUID(),
         title: String,
         isDone: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        deletedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
         self.isDone = isDone
         self.createdAt = createdAt
+        self.deletedAt = deletedAt
     }
 }
 
@@ -49,6 +52,8 @@ struct TodoView: View {
     @State private var promoteCategory: RoutineCategory = .anytime
     @State private var promotingTodoID: UUID? = nil
     @State private var showAlreadyInRoutinesAlert: Bool = false
+
+    @State private var isTrashExpanded: Bool = false
 
     @FocusState private var isAddFieldFocused: Bool
 
@@ -74,8 +79,13 @@ struct TodoView: View {
 
                 // List of To-Do items
                 List {
-                    ForEach($items) { $item in
-                        Toggle(isOn: $item.isDone) {
+                    // Only show active (not deleted) items in the main list
+                    let activeIndices = items.indices.filter { items[$0].deletedAt == nil }
+
+                    ForEach(activeIndices, id: \.self) { index in
+                        let item = items[index]
+
+                        Toggle(isOn: $items[index].isDone) {
                             Text(item.title)
                                 .opacity(item.isDone ? 0.5 : 1.0)
                         }
@@ -85,7 +95,7 @@ struct TodoView: View {
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button("Delete", role: .destructive) {
-                                deleteTodo(id: item.id)
+                                softDeleteTodo(id: item.id)
                             }
 
                             Button("Add to Routines") {
@@ -95,7 +105,39 @@ struct TodoView: View {
                         }
                     }
                     .onDelete { offsets in
-                        deleteItems(offsets: offsets)
+                        // offsets are relative to activeIndices, so translate them
+                        let actualIndices = offsets.map { activeIndices[$0] }
+                        softDeleteItems(at: IndexSet(actualIndices))
+                    }
+
+                    // Recently Deleted (Trash)
+                    let trashIndices = items.indices.filter { items[$0].deletedAt != nil }
+                    if !trashIndices.isEmpty {
+                        Section {
+                            DisclosureGroup(isExpanded: $isTrashExpanded) {
+                                ForEach(trashIndices, id: \.self) { index in
+                                    let item = items[index]
+
+                                    HStack {
+                                        Text(item.title)
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button("Restore") {
+                                            restoreTodo(id: item.id)
+                                        }
+                                        .tint(.blue)
+
+                                        Button("Delete Forever", role: .destructive) {
+                                            deleteTodoForever(id: item.id)
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Text("Recently Deleted (\(trashIndices.count))")
+                            }
+                        }
                     }
                 }
             }
@@ -237,11 +279,25 @@ struct TodoView: View {
         isAddFieldFocused = true
     }
 
-    private func deleteItems(offsets: IndexSet) {
-        items.remove(atOffsets: offsets)
+    private func softDeleteItems(at offsets: IndexSet) {
+        for i in offsets {
+            items[i].deletedAt = Date()
+        }
     }
 
-    private func deleteTodo(id: UUID) {
+    private func softDeleteTodo(id: UUID) {
+        if let index = items.firstIndex(where: { $0.id == id }) {
+            items[index].deletedAt = Date()
+        }
+    }
+
+    private func restoreTodo(id: UUID) {
+        if let index = items.firstIndex(where: { $0.id == id }) {
+            items[index].deletedAt = nil
+        }
+    }
+
+    private func deleteTodoForever(id: UUID) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items.remove(at: index)
         }
