@@ -38,6 +38,7 @@ struct TodoItem: Identifiable, Codable, Equatable {
 struct TodoView: View {
     private let storageKey = "todo_items_v1"
     private let routineStorageKey = "routine_items_v1"
+    private let trashRetentionDays: Int = 7 // auto-delete todos in this number of days
 
     @State private var items: [TodoItem] = []
     @State private var newTitle: String = ""
@@ -184,6 +185,7 @@ struct TodoView: View {
         }
         .onAppear {
             loadItems()
+            purgeExpiredTrash()
             isAddFieldFocused = true
         }
         .onChange(of: items) {
@@ -300,6 +302,17 @@ struct TodoView: View {
     private func deleteTodoForever(id: UUID) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items.remove(at: index)
+        }
+    }
+
+    // Permanently remove items that have been in Trash longer than `trashRetentionDays`.
+    private func purgeExpiredTrash() {
+        let now = Date()
+        let cutoff = Calendar.current.date(byAdding: .day, value: -trashRetentionDays, to: now) ?? now
+
+        items.removeAll { item in
+            guard let deletedAt = item.deletedAt else { return false } // keep non-deleted items
+            return deletedAt < cutoff // delete if older than cutoff
         }
     }
 
