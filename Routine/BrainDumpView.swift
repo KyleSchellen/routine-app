@@ -34,25 +34,35 @@ struct BrainDumpView: View {
                     )
                     .frame(minHeight: 300)
 
-                Text("Tip: Put one thought per line. Each line becomes a To-Do item.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Tip: Put one thought per line. Each line becomes a To-Do item.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    let readyCount = uniqueLinesFromBrainDump().lines.count
+                    Text("Ready: \(readyCount) item(s)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 10) {
                     Button("Send to To-Do") {
+                        hideKeyboard()
                         sendLinesToTodo()
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(uniqueLinesFromBrainDump().lines.isEmpty)
 
                     Button("Clear") {
+                        hideKeyboard()
                         text = ""
                     }
                     .buttonStyle(.bordered)
                     .disabled(text.isEmpty)
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, 40)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
             }
             .padding()
             .contentShape(Rectangle())
