@@ -18,7 +18,9 @@ struct BrainDumpView: View {
     @State private var text: String = ""
 
     @State private var showSentAlert: Bool = false
-    @State private var lastSentCount: Int = 0
+    @State private var lastAddedCount: Int = 0
+    @State private var lastSkippedCount: Int = 0
+    @State private var lastBrainDumpDuplicateCount: Int = 0
 
     var body: some View {
         NavigationStack {
@@ -41,7 +43,7 @@ struct BrainDumpView: View {
                         sendLinesToTodo()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(nonEmptyLines().isEmpty)
+                    .disabled(uniqueLinesFromBrainDump().lines.isEmpty)
 
                     Button("Clear") {
                         text = ""
@@ -62,7 +64,7 @@ struct BrainDumpView: View {
         .alert("Sent to To-Do", isPresented: $showSentAlert) {
             Button("OK") { }
         } message: {
-            Text("Added \(lastSentCount) item(s).")
+            Text("Added \(lastAddedCount). Removed \(lastBrainDumpDuplicateCount) duplicate(s) in Brain Dump. Skipped \(lastSkippedCount) already in To-Do.")
         }
     }
 
@@ -78,23 +80,53 @@ struct BrainDumpView: View {
 
     // MARK: - Promote Brain Dump lines into To-Do
 
-    private func nonEmptyLines() -> [String] {
-        return text
+    private func uniqueLinesFromBrainDump() -> (lines: [String], removedDuplicates: Int) {
+        let cleanedLines = text
             .split(whereSeparator: \.isNewline) // split on each newline
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } // trim spaces
             .filter { !$0.isEmpty } // ignore blank lines
+
+        // Deduplicate within the brain dump (case-insensitive).
+        // We keep the first original version of the line that appears.
+        var seen = Set<String>()
+        var unique: [String] = []
+        var removed = 0
+
+        for line in cleanedLines {
+            let key = line.lowercased()
+            if seen.contains(key) {
+                removed += 1
+            } else {
+                seen.insert(key)
+                unique.append(line)
+            }
+        }
+
+        return (unique, removed)
     }
 
     private func sendLinesToTodo() {
-        let lines = nonEmptyLines()
+        let result = uniqueLinesFromBrainDump()
+        let lines = result.lines
         guard !lines.isEmpty else { return }
 
         // 1) Load the existing To-Do list from UserDefaults
         var existingTodoItems = loadTodoItems()
 
-        // 2) Convert each line into a TodoItem
-        let newTodoItems = lines.map { line in
-            TodoItem(title: line)
+        // Build a set of existing titles (case-insensitive) so we can skip duplicates
+        let existingTitleKeys = Set(existingTodoItems.map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+
+        // 2) Convert each NEW line into a TodoItem (skip duplicates that already exist)
+        var newTodoItems: [TodoItem] = []
+        var skipped = 0
+
+        for line in lines {
+            let key = line.lowercased()
+            if existingTitleKeys.contains(key) {
+                skipped += 1
+            } else {
+                newTodoItems.append(TodoItem(title: line))
+            }
         }
 
         // 3) Append and save back to the same storage used by TodoView
@@ -102,7 +134,9 @@ struct BrainDumpView: View {
         saveTodoItems(existingTodoItems)
 
         // 4) UI feedback + clear brain dump
-        lastSentCount = newTodoItems.count
+        lastAddedCount = newTodoItems.count
+        lastBrainDumpDuplicateCount = result.removedDuplicates
+        lastSkippedCount = skipped
         showSentAlert = true
         text = ""
     }
