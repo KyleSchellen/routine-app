@@ -55,6 +55,7 @@ struct TodoView: View {
     @State private var showAlreadyInRoutinesAlert: Bool = false
 
     @State private var isTrashExpanded: Bool = false
+    @State private var showEmptyTrashConfirm: Bool = false
 
     @FocusState private var isAddFieldFocused: Bool
 
@@ -135,6 +136,18 @@ struct TodoView: View {
                                         }
                                     }
                                 }
+                                Button {
+                                    showEmptyTrashConfirm = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "trash")
+                                        Text("Delete All Recently Deleted")
+                                        Spacer()
+                                    }
+                                }
+                                .foregroundStyle(.red)
+                                .buttonStyle(.plain)
+                                .padding(.top, 8)
                             } label: {
                                 Text("Recently Deleted (\(trashIndices.count))")
                             }
@@ -200,6 +213,14 @@ struct TodoView: View {
             Button("OK") { }
         } message: {
             Text("That item is already in Routines.")
+        }
+        .alert("Delete all recently deleted items?", isPresented: $showEmptyTrashConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete All", role: .destructive) {
+                deleteAllTrash()
+            }
+        } message: {
+            Text("This will permanently remove everything in Recently Deleted.")
         }
         .sheet(isPresented: $showingPromoteSheet) {
             NavigationStack {
@@ -303,6 +324,10 @@ struct TodoView: View {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items.remove(at: index)
         }
+    }
+
+    private func deleteAllTrash() {
+        items.removeAll { $0.deletedAt != nil }
     }
 
     // Permanently remove items that have been in Trash longer than `trashRetentionDays`.
