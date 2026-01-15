@@ -22,7 +22,7 @@ struct MainTabView: View {
             
             TodoView()
                 .tabItem {
-                    Label("To-do", systemImage: "checklist")
+                    Label("To-Do", systemImage: "checklist")
                 }
         }
     }

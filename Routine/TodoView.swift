@@ -33,11 +33,21 @@ struct TodoItem: Identifiable, Codable, Equatable {
 
 struct TodoView: View {
     private let storageKey = "todo_items_v1"
+    private let routineStorageKey = "routine_items_v1"
 
     @State private var items: [TodoItem] = []
     @State private var newTitle: String = ""
     @State private var editingItemID: UUID? = nil
     @State private var editTitle: String = ""
+    @State private var showPromotedAlert: Bool = false
+    @State private var lastPromotedTitle: String = ""
+    @State private var lastPromotedCategory: RoutineCategory = .anytime
+
+    @State private var showingPromoteSheet: Bool = false
+    @State private var promoteTitle: String = ""
+    @State private var promoteCategory: RoutineCategory = .anytime
+    @State private var promotingTodoID: UUID? = nil
+    @State private var showAlreadyInRoutinesAlert: Bool = false
 
     @FocusState private var isAddFieldFocused: Bool
 
@@ -71,6 +81,16 @@ struct TodoView: View {
                         .contentShape(Rectangle()) // makes the whole row tappable
                         .onTapGesture {
                             startEditing(item: item)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Delete", role: .destructive) {
+                                deleteTodo(id: item.id)
+                            }
+
+                            Button("Add to Routines") {
+                                beginPromote(todo: item)
+                            }
+                            .tint(.blue)
                         }
                     }
                     .onDelete { offsets in
@@ -122,9 +142,58 @@ struct TodoView: View {
         .onChange(of: items) {
             saveItems()
         }
+        .alert("Added to Routines", isPresented: $showPromotedAlert) {
+            Button("OK") { }
+        } message: {
+            Text("\"\(lastPromotedTitle)\" was added to Routines (\(lastPromotedCategory.rawValue)).")
+        }
+        .alert("Already in Routines", isPresented: $showAlreadyInRoutinesAlert) {
+            Button("OK") { }
+        } message: {
+            Text("That item is already in Routines.")
+        }
+        .sheet(isPresented: $showingPromoteSheet) {
+            NavigationStack {
+                Form {
+                    Section("Title") {
+                        TextField("Routine title", text: $promoteTitle)
+                    }
+
+                    Section("Category") {
+                        Picker("Category", selection: $promoteCategory) {
+                            Text("Morning").tag(RoutineCategory.morning)
+                            Text("Anytime").tag(RoutineCategory.anytime)
+                            Text("Evening").tag(RoutineCategory.evening)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+                .navigationTitle("Add to Routines")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingPromoteSheet = false
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Add") {
+                            confirmPromoteToRoutine()
+                        }
+                        .disabled(promoteTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Actions
+
+    private func beginPromote(todo: TodoItem) {
+        promotingTodoID = todo.id
+        promoteTitle = todo.title
+        promoteCategory = .anytime
+        showingPromoteSheet = true
+    }
 
     private func startEditing(item: TodoItem) {
         editingItemID = item.id
@@ -157,6 +226,12 @@ struct TodoView: View {
         items.remove(atOffsets: offsets)
     }
 
+    private func deleteTodo(id: UUID) {
+        if let index = items.firstIndex(where: { $0.id == id }) {
+            items.remove(at: index)
+        }
+    }
+
     // MARK: - Persistence
 
     private func saveItems() {
@@ -179,6 +254,82 @@ struct TodoView: View {
         } catch {
             print("Failed to load To-Do items:", error)
             items = []
+        }
+    }
+
+    // MARK: - Promote To-Do → Routines
+
+    private func confirmPromoteToRoutine() {
+        let trimmed = promoteTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let didAdd = promoteToRoutine(title: trimmed, category: promoteCategory)
+
+        // Close sheet UI
+        showingPromoteSheet = false
+
+        if didAdd {
+            lastPromotedTitle = trimmed
+            lastPromotedCategory = promoteCategory
+
+            // Remove the original To-Do (move instead of copy)
+            if let todoID = promotingTodoID,
+               let index = items.firstIndex(where: { $0.id == todoID }) {
+                items.remove(at: index)
+            }
+
+            showPromotedAlert = true
+        } else {
+            showAlreadyInRoutinesAlert = true
+        }
+
+        // Clear selection at the end
+        promotingTodoID = nil
+    }
+
+    // Returns true if added, false if it was already in Routines
+    private func promoteToRoutine(title: String, category: RoutineCategory) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        // Load existing routines
+        var routines = loadRoutineItems()
+
+        // Duplicate prevention (case-insensitive match on title)
+        let newKey = trimmed.lowercased()
+        let existingKeys = Set(routines.map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+
+        guard !existingKeys.contains(newKey) else {
+            return false
+        }
+
+        let newRoutine = RoutineItem(title: trimmed, category: category, lastCompletedDay: nil)
+        routines.append(newRoutine)
+
+        // Save back to the same storage key used by RoutinesView
+        saveRoutineItems(routines)
+        return true
+    }
+
+    private func loadRoutineItems() -> [RoutineItem] {
+        guard let data = UserDefaults.standard.data(forKey: routineStorageKey) else {
+            return []
+        }
+
+        do {
+            return try JSONDecoder().decode([RoutineItem].self, from: data)
+        } catch {
+            print("Failed to load routine items for promotion:", error)
+            return []
+        }
+    }
+
+    private func saveRoutineItems(_ items: [RoutineItem]) {
+        do {
+            let data = try JSONEncoder().encode(items)
+            UserDefaults.standard.set(data, forKey: routineStorageKey)
+        } catch {
+            print("Failed to save routine items for promotion:", error)
         }
     }
 }
