@@ -56,7 +56,12 @@ struct RoutineItem: Identifiable, Codable, Equatable {
 struct RoutinesView: View {
     private let storageKey = "routine_items_v1"
     
-    @State private var items: [RoutineItem] = []
+    @State private var morningItems: [RoutineItem] = []
+    @State private var anytimeItems: [RoutineItem] = []
+    @State private var eveningItems: [RoutineItem] = []
+
+    @State private var saveWorkItem: DispatchWorkItem? = nil
+    
     @State private var newItemTitle: String = ""
     @State private var selectedCategory: RoutineCategory = .anytime
     
@@ -113,8 +118,14 @@ struct RoutinesView: View {
             loadItems()
             isAddFieldFocused = true
         }
-        .onChange(of: items) {
-            saveItems()
+        .onChange(of: morningItems) {
+            scheduleSave()
+        }
+        .onChange(of: anytimeItems) {
+            scheduleSave()
+        }
+        .onChange(of: eveningItems) {
+            scheduleSave()
         }
         .sheet(
             isPresented: Binding(
@@ -164,38 +175,133 @@ struct RoutinesView: View {
         )
     }
     
+    private func scheduleSave() {
+        saveWorkItem?.cancel()
+        let work = DispatchWorkItem {
+            saveItems()
+        }
+        saveWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func applyLoadedItems(_ loaded: [RoutineItem]) {
+        morningItems = loaded.filter { $0.category == .morning }
+        anytimeItems = loaded.filter { $0.category == .anytime }
+        eveningItems = loaded.filter { $0.category == .evening }
+    }
+
+    private func getItems(for category: RoutineCategory) -> [RoutineItem] {
+        switch category {
+        case .morning: return morningItems
+        case .anytime: return anytimeItems
+        case .evening: return eveningItems
+        }
+    }
+
+    private func bindingFor(category: RoutineCategory) -> Binding<[RoutineItem]> {
+        switch category {
+        case .morning:
+            return $morningItems
+        case .anytime:
+            return $anytimeItems
+        case .evening:
+            return $eveningItems
+        }
+    }
+
+    private func appendItem(_ item: RoutineItem, to category: RoutineCategory) {
+        switch category {
+        case .morning:
+            morningItems.append(item)
+        case .anytime:
+            anytimeItems.append(item)
+        case .evening:
+            eveningItems.append(item)
+        }
+    }
+
+    private func removeItem(at index: Int, from category: RoutineCategory) {
+        switch category {
+        case .morning:
+            morningItems.remove(at: index)
+        case .anytime:
+            anytimeItems.remove(at: index)
+        case .evening:
+            eveningItems.remove(at: index)
+        }
+    }
+
+    private func findLocation(of id: UUID) -> (category: RoutineCategory, index: Int)? {
+        if let idx = morningItems.firstIndex(where: { $0.id == id }) {
+            return (.morning, idx)
+        }
+        if let idx = anytimeItems.firstIndex(where: { $0.id == id }) {
+            return (.anytime, idx)
+        }
+        if let idx = eveningItems.firstIndex(where: { $0.id == id }) {
+            return (.evening, idx)
+        }
+        return nil
+    }
+
+    private func deleteRoutine(id: UUID) {
+        if let idx = morningItems.firstIndex(where: { $0.id == id }) {
+            morningItems.remove(at: idx)
+            return
+        }
+        if let idx = anytimeItems.firstIndex(where: { $0.id == id }) {
+            anytimeItems.remove(at: idx)
+            return
+        }
+        if let idx = eveningItems.firstIndex(where: { $0.id == id }) {
+            eveningItems.remove(at: idx)
+            return
+        }
+    }
+
+    private func moveItems(in category: RoutineCategory, from source: IndexSet, to destination: Int) {
+        switch category {
+        case .morning:
+            morningItems.move(fromOffsets: source, toOffset: destination)
+        case .anytime:
+            anytimeItems.move(fromOffsets: source, toOffset: destination)
+        case .evening:
+            eveningItems.move(fromOffsets: source, toOffset: destination)
+        }
+    }
+    
     @ViewBuilder
     private func routineSection(category: RoutineCategory) -> some View {
         let today = todayKey()
+        let itemsForCategory = getItems(for: category)
 
-        let indices = items.indices.filter { items[$0].category == category }
-        if !indices.isEmpty {
+        if !itemsForCategory.isEmpty {
             Section(category.rawValue) {
-                ForEach(indices, id: \.self) { index in
-                    let isDoneToday = (items[index].lastCompletedDay == today)
-                    
+                ForEach(bindingFor(category: category)) { $item in
+                    let isDoneToday = ($item.wrappedValue.lastCompletedDay == today)
+
                     Toggle(
                         isOn: Binding(
                             get: { isDoneToday },
                             set: { newValue in
-                                items[index].lastCompletedDay = newValue ? today : nil
+                                $item.wrappedValue.lastCompletedDay = newValue ? today : nil
                             }
                         )
                     ) {
                         HStack(spacing: 8) {
                             Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
                                 .imageScale(.medium)
-                            
-                            Text(items[index].title)
+
+                            Text($item.wrappedValue.title)
                                 .opacity(isDoneToday ? 0.5 : 1.0)
                         }
                     }
                     .swipeActions(edge: .trailing) {
                         Button("Delete", role: .destructive) {
-                                items.remove(at: index)
-                            }
+                            deleteRoutine(id: $item.wrappedValue.id)
+                        }
                         Button("Edit") {
-                            startEditing(item: items[index])
+                            startEditing(item: $item.wrappedValue)
                         }
                         .tint(.blue)
                     }
@@ -203,20 +309,29 @@ struct RoutinesView: View {
                 .onDelete { offsets in
                     deleteFromCategory(category: category, offsets: offsets)
                 }
+                .onMove { source, destination in
+                    moveItems(in: category, from: source, to: destination)
+                }
             }
         }
     }
     
     private func deleteFromCategory(category: RoutineCategory, offsets: IndexSet) {
-        let indices = items.indices.filter { items[$0].category == category }
-        let actualIndices = offsets.map { indices[$0] }
-        items.remove(atOffsets: IndexSet(actualIndices))
+        switch category {
+        case .morning:
+            morningItems.remove(atOffsets: offsets)
+        case .anytime:
+            anytimeItems.remove(atOffsets: offsets)
+        case .evening:
+            eveningItems.remove(atOffsets: offsets)
+        }
     }
     
     private func addItem() {
         let trimmed = newItemTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        items.append(RoutineItem(title: trimmed, category: selectedCategory, lastCompletedDay: nil))
+        let newItem = RoutineItem(title: trimmed, category: selectedCategory, lastCompletedDay: nil)
+        appendItem(newItem, to: selectedCategory)
         newItemTitle = "" // reset textfield to empty after adding new item
         isAddFieldFocused = true //guard for future focus stealers
     }
@@ -227,10 +342,6 @@ struct RoutinesView: View {
         editCategory = item.category
     }
 
-    private func deleteItems(at offsets: IndexSet) {
-        items.remove(atOffsets: offsets)
-    }
-
     private func todayKey() -> Int {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month, .day], from: Date())
@@ -239,7 +350,8 @@ struct RoutinesView: View {
     
     private func saveItems() {
         do {
-            let data = try JSONEncoder().encode(items)
+            let combined = morningItems + anytimeItems + eveningItems
+            let data = try JSONEncoder().encode(combined)
             UserDefaults.standard.set(data, forKey: storageKey)
         } catch {
             print("Failed to save items:", error)
@@ -247,16 +359,26 @@ struct RoutinesView: View {
     }
     
     private func saveEdits() {
-        guard let id = editingItemID,
-              let idx = items.firstIndex(where: { $0.id == id }) else {
-            return
-        }
+        guard let id = editingItemID else { return }
 
         let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        items[idx].title = trimmed
-        items[idx].category = editCategory
+        guard let location = findLocation(of: id) else { return }
+
+        let currentCategory = location.category
+        let currentIndex = location.index
+
+        // Update the item in-place
+        var item = getItems(for: currentCategory)[currentIndex]
+        item.title = trimmed
+        item.category = editCategory
+
+        // Remove from the old category array
+        removeItem(at: currentIndex, from: currentCategory)
+
+        // Add to the new category array
+        appendItem(item, to: editCategory)
 
         editingItemID = nil
     }
@@ -264,29 +386,31 @@ struct RoutinesView: View {
     private func loadItems() {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else {
             // First run: start with defaults
-            items = [
+            let defaults: [RoutineItem] = [
                 RoutineItem(title: "Take vitamins (AM)", category: .morning),
                 RoutineItem(title: "Wash face (AM)", category: .morning),
                 RoutineItem(title: "Wash face (PM)", category: .evening),
                 RoutineItem(title: "Shower", category: .anytime),
                 RoutineItem(title: "Bed by 10:00", category: .evening)
             ]
+            applyLoadedItems(defaults)
             return
         }
 
         do {
-            items = try JSONDecoder().decode([RoutineItem].self, from: data)
+            let loaded = try JSONDecoder().decode([RoutineItem].self, from: data)
+            applyLoadedItems(loaded)
         } catch {
             print("Failed to load items:", error)
 
-            // If decoding fails, fall back to defaults so app still works
-            items = [
-                RoutineItem(title: "Take vitamins (AM)"),
-                RoutineItem(title: "Wash face (AM)"),
-                RoutineItem(title: "Wash face (PM)"),
-                RoutineItem(title: "Shower"),
-                RoutineItem(title: "Bed by 10:00")
+            let defaults: [RoutineItem] = [
+                RoutineItem(title: "Take vitamins (AM)", category: .morning),
+                RoutineItem(title: "Wash face (AM)", category: .morning),
+                RoutineItem(title: "Wash face (PM)", category: .evening),
+                RoutineItem(title: "Shower", category: .anytime),
+                RoutineItem(title: "Bed by 10:00", category: .evening)
             ]
+            applyLoadedItems(defaults)
         }
     }
 }
