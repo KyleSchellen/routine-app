@@ -19,6 +19,11 @@ struct MainTabView: View {
                 .tabItem {
                     Label("Brain Dump", systemImage: "brain.head.profile")
                 }
+            
+            TodoView()
+                .tabItem {
+                    Label("To-do", systemImage: "checklist")
+                }
         }
     }
 }
