@@ -31,6 +31,11 @@ struct BrainDumpView: View {
                     )
                     .frame(minHeight: 300)
 
+                Text("Tip: Put one thought per line. Each line becomes a To-Do item.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                 HStack(spacing: 10) {
                     Button("Send lines to To-Do") {
                         sendLinesToTodo()
