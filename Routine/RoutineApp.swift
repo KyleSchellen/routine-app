@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct RoutineApp: App {
+    @StateObject private var store = AppStore()
+
     var body: some Scene {
         WindowGroup {
             MainTabView()
+                .environmentObject(store)
         }
     }
 }

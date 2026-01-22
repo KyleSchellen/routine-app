@@ -6,24 +6,29 @@
 //
 
 import SwiftUI
-import Foundation
 import UIKit
 
 struct BrainDumpView: View {
-    // Where we save the big brain dump text
+    @EnvironmentObject private var store: AppStore
+
+    // MARK: - Storage Keys
     private let brainDumpStorageKey = "brain_dump_text_v1"
 
-    // Where the To-Do tab saves its list of TodoItem
-    private let todoStorageKey = "todo_items_v1"
-
+    // MARK: - View State
     @State private var text: String = ""
 
-    @State private var showSentAlert: Bool = false
-    @State private var lastAddedCount: Int = 0
-    @State private var lastSkippedCount: Int = 0
-    @State private var lastBrainDumpDuplicateCount: Int = 0
+    @State private var showSentAlert = false
+    @State private var lastAddedCount = 0
+    @State private var lastSkippedCount = 0
+    @State private var lastBrainDumpDuplicateCount = 0
+
+    /// Used to debounce saves while typing
+    @State private var saveWorkItem: DispatchWorkItem?
 
     var body: some View {
+        // Parse ONCE per render so we don’t repeat work everywhere
+        let parsed = parseBrainDump(text)
+
         NavigationStack {
             VStack(spacing: 12) {
                 TextEditor(text: $text)
@@ -39,8 +44,7 @@ struct BrainDumpView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    let readyCount = uniqueLinesFromBrainDump().lines.count
-                    Text("Ready: \(readyCount) item(s)")
+                    Text("Ready: \(parsed.lines.count) item(s)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -49,10 +53,10 @@ struct BrainDumpView: View {
                 HStack(spacing: 10) {
                     Button("Send to To-Do") {
                         hideKeyboard()
-                        sendLinesToTodo()
+                        sendLinesToTodo(parse: parsed)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(uniqueLinesFromBrainDump().lines.isEmpty)
+                    .disabled(parsed.lines.isEmpty)
 
                     Button("Clear") {
                         hideKeyboard()
@@ -66,25 +70,27 @@ struct BrainDumpView: View {
             }
             .padding()
             .contentShape(Rectangle())
-            .onTapGesture {
-                hideKeyboard()
-            }
+            .onTapGesture { hideKeyboard() }
             .navigationTitle("Brain Dump")
         }
         .onAppear {
             loadText()
         }
         .onChange(of: text) {
-            saveText()
+            scheduleSaveText()
         }
         .alert("Sent to To-Do", isPresented: $showSentAlert) {
             Button("OK") { }
         } message: {
-            Text("Added \(lastAddedCount). Removed duplicates: \(lastBrainDumpDuplicateCount). Already in To-Do: \(lastSkippedCount).")
+            Text(
+                "Added \(lastAddedCount). " +
+                "Removed duplicates: \(lastBrainDumpDuplicateCount). " +
+                "Already in To-Do: \(lastSkippedCount)."
+            )
         }
     }
 
-    // Simple helper to hide the keyboard
+    // MARK: - Keyboard Helper
     private func hideKeyboard() {
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder),
@@ -94,32 +100,29 @@ struct BrainDumpView: View {
         )
     }
 
-    // MARK: - Brain Dump Persistence
-
-    private func saveText() {
-        UserDefaults.standard.set(text, forKey: brainDumpStorageKey)
+    // MARK: - Brain Dump Parsing
+    private struct ParseResult {
+        let lines: [String]
+        let removedDuplicates: Int
     }
 
-    private func loadText() {
-        text = UserDefaults.standard.string(forKey: brainDumpStorageKey) ?? ""
+    private func normalized(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    // MARK: - Promote Brain Dump lines into To-Do
+    private func parseBrainDump(_ rawText: String) -> ParseResult {
+        let cleanedLines = rawText
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
 
-    private func uniqueLinesFromBrainDump() -> (lines: [String], removedDuplicates: Int) {
-        let cleanedLines = text
-            .split(whereSeparator: \.isNewline) // split on each newline
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } // trim spaces
-            .filter { !$0.isEmpty } // ignore blank lines
-
-        // Deduplicate within the brain dump (case-insensitive).
-        // We keep the first original version of the line that appears.
         var seen = Set<String>()
         var unique: [String] = []
         var removed = 0
 
         for line in cleanedLines {
-            let key = line.lowercased()
+            let key = normalized(line)
+
             if seen.contains(key) {
                 removed += 1
             } else {
@@ -128,68 +131,58 @@ struct BrainDumpView: View {
             }
         }
 
-        return (unique, removed)
+        return ParseResult(lines: unique, removedDuplicates: removed)
     }
 
-    private func sendLinesToTodo() {
-        let result = uniqueLinesFromBrainDump()
-        let lines = result.lines
+    // MARK: - Promote Brain Dump to To-Do
+    private func sendLinesToTodo(parse: ParseResult) {
+        let lines = parse.lines
         guard !lines.isEmpty else { return }
 
-        // 1) Load the existing To-Do list from UserDefaults
-        var existingTodoItems = loadTodoItems()
-
-        // Build a set of existing titles (case-insensitive) so we can skip duplicates
-        let existingTitleKeys = Set(existingTodoItems.map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
-
-        // 2) Convert each NEW line into a TodoItem (skip duplicates that already exist)
-        var newTodoItems: [TodoItem] = []
+        var added = 0
         var skipped = 0
 
         for line in lines {
-            let key = line.lowercased()
-            if existingTitleKeys.contains(key) {
+            let key = normalized(line)
+            guard !key.isEmpty else { continue }
+
+            if store.todoTitleExists(line) {
                 skipped += 1
             } else {
-                newTodoItems.append(TodoItem(title: line))
+                store.addTodo(title: line)
+                added += 1
             }
         }
 
-        // 3) Append and save back to the same storage used by TodoView
-        existingTodoItems.append(contentsOf: newTodoItems)
-        saveTodoItems(existingTodoItems)
-
-        // 4) UI feedback + clear brain dump
-        lastAddedCount = newTodoItems.count
-        lastBrainDumpDuplicateCount = result.removedDuplicates
+        lastAddedCount = added
+        lastBrainDumpDuplicateCount = parse.removedDuplicates
         lastSkippedCount = skipped
         showSentAlert = true
         text = ""
     }
 
-    private func loadTodoItems() -> [TodoItem] {
-        guard let data = UserDefaults.standard.data(forKey: todoStorageKey) else {
-            return []
-        }
-
-        do {
-            return try JSONDecoder().decode([TodoItem].self, from: data)
-        } catch {
-            print("Failed to load To-Do items for promotion:", error)
-            return []
-        }
+    // MARK: - Persistence (Brain dump text only)
+    private func loadText() {
+        text = UserDefaults.standard.string(forKey: brainDumpStorageKey) ?? ""
     }
 
-    private func saveTodoItems(_ items: [TodoItem]) {
-        do {
-            let data = try JSONEncoder().encode(items)
-            UserDefaults.standard.set(data, forKey: todoStorageKey)
-        } catch {
-            print("Failed to save To-Do items for promotion:", error)
+    private func saveText() {
+        UserDefaults.standard.set(text, forKey: brainDumpStorageKey)
+    }
+
+    private func scheduleSaveText() {
+        saveWorkItem?.cancel()
+
+        let work = DispatchWorkItem {
+            saveText()
         }
+
+        saveWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 }
 
 #Preview {
     BrainDumpView()
+        .environmentObject(AppStore())
 }

@@ -6,32 +6,11 @@
 //
 
 import SwiftUI
-import Foundation
-
-struct CheckboxToggleStyle: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        Button {
-            configuration.isOn.toggle()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: configuration.isOn ? "checkmark.circle.fill" : "circle")
-                    .imageScale(.medium)
-                configuration.label
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
 
 struct TodayView: View {
-    // Reuse the same storage keys as the other tabs
-    private let routinesKey = "routine_items_v1"
-    private let todoKey = "todo_items_v1"
+    @EnvironmentObject private var store: AppStore
 
-    @State private var routines: [RoutineItem] = []
-    @State private var todos: [TodoItem] = []
     @State private var isCompletedExpanded: Bool = true
-
     @State private var isMorningExpanded: Bool = true
     @State private var isAnytimeExpanded: Bool = true
     @State private var isEveningExpanded: Bool = true
@@ -42,35 +21,23 @@ struct TodayView: View {
         NavigationStack {
             List {
                 routinesGroup()
-
                 todoSectionCollapsible()
-
                 completedSections()
             }
             .navigationTitle("Today")
         }
-        .onAppear {
-            loadRoutines()
-            loadTodos()
-        }
-        .onChange(of: routines) {
-            saveRoutines()
-        }
-        .onChange(of: todos) {
-            saveTodos()
-        }
     }
 
-    // MARK: - Routines (group + subcategories)
+    // MARK: - Routines
 
     @ViewBuilder
     private func routinesGroup() -> some View {
-        let today = todayKey()
+        let today = store.todayKey()
+        let all = store.routines
 
-        let totalCount = routines.count
-        let remainingCount = routines.filter { $0.lastCompletedDay != today }.count
+        let totalCount = all.count
+        let remainingCount = all.filter { $0.lastCompletedDay != today }.count
 
-        // Hide the whole routines group if there are no routines at all.
         if totalCount > 0 {
             Section {
                 DisclosureGroup(isExpanded: $isRoutinesExpanded) {
@@ -86,38 +53,31 @@ struct TodayView: View {
 
     @ViewBuilder
     private func routinesSubcategory(category: RoutineCategory) -> some View {
-        let today = todayKey()
+        let today = store.todayKey()
+        let items = store.routines(for: category)
 
-        let totalIndices = routines.indices.filter { i in
-            routines[i].category == category
-        }
+        let totalCount = items.count
+        let remaining = items.filter { $0.lastCompletedDay != today }
+        let remainingCount = remaining.count
 
-        let remainingIndices = totalIndices.filter { i in
-            routines[i].lastCompletedDay != today
-        }
-
-        let remainingCount = remainingIndices.count
-        let totalCount = totalIndices.count
-
-        // If the user has no routines in this category at all, hide this subcategory.
         if totalCount > 0 {
             DisclosureGroup(isExpanded: expandedBinding(for: category)) {
-                if remainingIndices.isEmpty {
+                if remaining.isEmpty {
                     Text("All done ✅")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(remainingIndices, id: \.self) { index in
-                        let isDoneToday = (routines[index].lastCompletedDay == today)
+                    ForEach(remaining) { item in
+                        let isDoneToday = (item.lastCompletedDay == today)
 
                         Toggle(
                             isOn: Binding(
                                 get: { isDoneToday },
                                 set: { newValue in
-                                    routines[index].lastCompletedDay = newValue ? today : nil
+                                    store.toggleRoutineDoneToday(id: item.id, isDone: newValue)
                                 }
                             )
                         ) {
-                            Text(routines[index].title)
+                            Text(item.title)
                         }
                         .toggleStyle(CheckboxToggleStyle())
                     }
@@ -130,23 +90,20 @@ struct TodayView: View {
 
     private func expandedBinding(for category: RoutineCategory) -> Binding<Bool> {
         switch category {
-        case .morning:
-            return $isMorningExpanded
-        case .anytime:
-            return $isAnytimeExpanded
-        case .evening:
-            return $isEveningExpanded
+        case .morning: return $isMorningExpanded
+        case .anytime: return $isAnytimeExpanded
+        case .evening: return $isEveningExpanded
         }
     }
 
-    // MARK: - To-Dos (collapsible)
+    // MARK: - Todos
 
     @ViewBuilder
     private func todoSectionCollapsible() -> some View {
-        let remainingCount = todos.filter { !$0.isDone }.count
-        let totalCount = todos.count
+        let active = store.activeTodos
+        let remainingCount = active.filter { !$0.isDone }.count
+        let totalCount = active.count
 
-        // Hide the section entirely if there are no To-Dos at all.
         if totalCount > 0 {
             Section {
                 DisclosureGroup(isExpanded: $isTodoExpanded) {
@@ -158,69 +115,62 @@ struct TodayView: View {
         }
     }
 
-    // MARK: - To-Dos (not done)
-
     @ViewBuilder
     private func todoNotDoneRows() -> some View {
-        let notDoneIndices = todos.indices.filter { i in
-            todos[i].isDone == false
-        }
+        let notDone = store.activeTodos.filter { !$0.isDone }
 
-        if notDoneIndices.isEmpty {
+        if notDone.isEmpty {
             Text("All done ✅")
                 .foregroundStyle(.secondary)
         } else {
-            ForEach(notDoneIndices, id: \.self) { index in
-                Toggle(isOn: $todos[index].isDone) {
-                    Text(todos[index].title)
+            ForEach(notDone) { item in
+                Toggle(
+                    isOn: Binding(
+                        get: { item.isDone },
+                        set: { newValue in
+                            store.toggleTodoDone(id: item.id, isDone: newValue)
+                        }
+                    )
+                ) {
+                    Text(item.title)
                 }
                 .toggleStyle(CheckboxToggleStyle())
             }
         }
     }
 
-    // MARK: - Completed (global bucket, collapsible)
+    // MARK: - Completed
 
     @ViewBuilder
     private func completedSections() -> some View {
-        let today = todayKey()
+        let today = store.todayKey()
 
-        let completedRoutineIndices = routines.indices.filter { i in
-            routines[i].lastCompletedDay == today
-        }
+        let completedRoutines = store.routines.filter { $0.lastCompletedDay == today }
+        let completedTodos = store.activeTodos.filter { $0.isDone }
 
-        let completedTodoIndices = todos.indices.filter { i in
-            todos[i].isDone == true
-        }
-
-        // Only show the group if there is anything completed
-        if !completedRoutineIndices.isEmpty || !completedTodoIndices.isEmpty {
+        if !completedRoutines.isEmpty || !completedTodos.isEmpty {
             Section {
-                DisclosureGroup(
-                    isExpanded: $isCompletedExpanded
-                ) {
-                    // Content shown when expanded
-                    if !completedRoutineIndices.isEmpty {
+                DisclosureGroup(isExpanded: $isCompletedExpanded) {
+
+                    if !completedRoutines.isEmpty {
                         Text("Completed Routines")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.top, 4)
 
-                        ForEach(completedRoutineIndices, id: \.self) { index in
-                            let isDoneToday = (routines[index].lastCompletedDay == today)
-
+                        ForEach(completedRoutines) { item in
                             Toggle(
                                 isOn: Binding(
-                                    get: { isDoneToday },
+                                    get: { item.lastCompletedDay == today },
                                     set: { newValue in
-                                        routines[index].lastCompletedDay = newValue ? today : nil
+                                        store.toggleRoutineDoneToday(id: item.id, isDone: newValue)
                                     }
                                 )
                             ) {
                                 HStack {
-                                    Text(routines[index].title)
+                                    Text(item.title)
                                     Spacer()
-                                    Text(routines[index].category.rawValue)
+                                    Text(item.category.rawValue)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -230,86 +180,37 @@ struct TodayView: View {
                         }
                     }
 
-                    if !completedTodoIndices.isEmpty {
+                    if !completedTodos.isEmpty {
                         Text("Completed To-Dos")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.top, 6)
 
-                        ForEach(completedTodoIndices, id: \.self) { index in
-                            Toggle(isOn: $todos[index].isDone) {
-                                Text(todos[index].title)
+                        ForEach(completedTodos) { item in
+                            Toggle(
+                                isOn: Binding(
+                                    get: { item.isDone },
+                                    set: { newValue in
+                                        store.toggleTodoDone(id: item.id, isDone: newValue)
+                                    }
+                                )
+                            ) {
+                                Text(item.title)
                                     .foregroundStyle(.secondary)
                             }
                             .toggleStyle(CheckboxToggleStyle())
                         }
                     }
+
                 } label: {
                     Text("Completed")
                 }
             }
         }
     }
-
-    // MARK: - Helpers
-
-    private func todayKey() -> Int {
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.year, .month, .day], from: Date())
-        return (components.year! * 10000) + (components.month! * 100) + components.day!
-    }
-
-    // MARK: - Persistence (Routines)
-
-    private func saveRoutines() {
-        do {
-            let data = try JSONEncoder().encode(routines)
-            UserDefaults.standard.set(data, forKey: routinesKey)
-        } catch {
-            print("Failed to save routines:", error)
-        }
-    }
-
-    private func loadRoutines() {
-        guard let data = UserDefaults.standard.data(forKey: routinesKey) else {
-            routines = []
-            return
-        }
-
-        do {
-            routines = try JSONDecoder().decode([RoutineItem].self, from: data)
-        } catch {
-            print("Failed to load routines:", error)
-            routines = []
-        }
-    }
-
-    // MARK: - Persistence (To-Dos)
-
-    private func saveTodos() {
-        do {
-            let data = try JSONEncoder().encode(todos)
-            UserDefaults.standard.set(data, forKey: todoKey)
-        } catch {
-            print("Failed to save todos:", error)
-        }
-    }
-
-    private func loadTodos() {
-        guard let data = UserDefaults.standard.data(forKey: todoKey) else {
-            todos = []
-            return
-        }
-
-        do {
-            todos = try JSONDecoder().decode([TodoItem].self, from: data)
-        } catch {
-            print("Failed to load todos:", error)
-            todos = []
-        }
-    }
 }
 
 #Preview {
     TodayView()
+        .environmentObject(AppStore())
 }
